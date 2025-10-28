@@ -11,6 +11,7 @@ class ResearchRequest(BaseModel):
     topic_or_prompt: str = Field(..., description="Main topic or question for the research paper.")
     word_count: int = Field(5000, description="Approximate total word count for the paper.")
     num_references: int = Field(10, description="Minimum number of references to include.")
+    page_length: int = Field(5, description="Approximate number of pages to generate.")
 
 
 # --- Documents and References ---
@@ -23,6 +24,7 @@ class SourceDocument(BaseModel):
     title: str = Field(..., description="Title of the source document.")
     content_snippet: str = Field(..., description="Important part of the document used in generation.")
 
+# --- Citation for paper ---
 
 class Citation(BaseModel):
     """
@@ -46,16 +48,24 @@ class PaperSection(BaseModel):
 # --- LangGraph State (during generation) ---
 
 class PaperoidState(BaseModel):
-    """
-    Tracks data while the paper is being generated.
-    """
+    """Tracks data while the paper is being generated."""
     request: ResearchRequest
     documents: List[SourceDocument] = Field(default_factory=list)
     sections: List[PaperSection] = Field(default_factory=list)
     references: List[Citation] = Field(default_factory=list)
     draft_title: Optional[str] = None
+    draft_text: Optional[str] = None  
     abstract: Optional[str] = None
     errors: List[str] = Field(default_factory=list)
+    output_pdf: Optional[str] = None
+    generation_time_s: Optional[float] = None
+    start_time: Optional[float] = None
+    status: str = Field(default="RUNNING", description="Current generation status")
+    
+
+    job_id: Optional[str] = None
+    title: Optional[str] = None
+    final_text: Optional[str] = None
 
     class Config:
         arbitrary_types_allowed = True
