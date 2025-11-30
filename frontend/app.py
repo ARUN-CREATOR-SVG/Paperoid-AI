@@ -61,41 +61,6 @@ st.markdown("""
         transition: all 0.3s ease;
         box-shadow: 0 4px 15px rgba(118, 75, 162, 0.3);
     }
-    
-    .stButton>button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(118, 75, 162, 0.4);
-    }
-
-    .card {
-        background: #ffffff;
-        padding: 1.5rem;
-        border-radius: 16px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.05);
-        margin-bottom: 1rem;
-        border: 1px solid #f0f0f0;
-    }
-
-    .metric-box {
-        text-align: center;
-        padding: 1rem;
-        background: #f8f9fa;
-        border-radius: 12px;
-        border: 1px solid #e9ecef;
-    }
-
-    .plag-card {
-        padding: 1rem;
-        border-radius: 10px;
-        background: #fff;
-        border-left: 5px solid #667eea;
-        margin-bottom: 1rem;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-    }
-    
-    .similarity-high { border-left-color: #dc3545; }
-    .similarity-med { border-left-color: #ffc107; }
-    .similarity-low { border-left-color: #28a745; }
 
     .progress-log {
         background: #f8f9fa;
@@ -106,6 +71,31 @@ st.markdown("""
         font-family: 'Monaco', 'Courier New', monospace;
         font-size: 0.9rem;
     }
+
+    .plag-card {
+        padding: 1rem;
+        border-radius: 10px;
+        background: #fff;
+        border-left: 5px solid #667eea;
+        margin-bottom: 1rem;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        color: #333; /* Force dark text for visibility in dark mode */
+    }
+    
+    .plag-card h4 {
+        color: #1e293b;
+        margin: 0 0 0.5rem 0;
+    }
+    
+    .plag-card p {
+        color: #475569;
+        font-size: 0.95rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .similarity-high { border-left-color: #dc3545; }
+    .similarity-med { border-left-color: #ffc107; }
+    .similarity-low { border-left-color: #28a745; }
 
 </style>
 """, unsafe_allow_html=True)
@@ -289,23 +279,39 @@ if st.session_state.paper_data:
         results = st.session_state.plag_results
         overall_score = st.session_state.get("plag_score", 0.0)
         
-        # Display Overall Score
+        # Calculate Average Score for display
+        avg_score = 0.0
+        if results:
+            avg_score = sum(p['similarity_score'] for p in results) / len(results)
+        
+        # Display Scores
         score_color = "green"
         if overall_score > 50: score_color = "red"
         elif overall_score > 20: score_color = "orange"
         
-        st.markdown(f"""
-        <div style="padding: 1rem; background: #f0f2f6; border-radius: 10px; margin-bottom: 1rem; text-align: center;">
-            <h3 style="margin:0;">Overall Similarity Score</h3>
-            <h1 style="color: {score_color}; font-size: 3rem; margin:0;">{overall_score}%</h1>
-            <p style="color: #666;">Highest similarity found among top matches</p>
-        </div>
-        """, unsafe_allow_html=True)
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown(f"""
+            <div style="padding: 1rem; background: #f0f2f6; border-radius: 10px; margin-bottom: 1rem; text-align: center;">
+                <h3 style="margin:0;">Max Similarity Score</h3>
+                <h1 style="color: {score_color}; font-size: 3rem; margin:0;">{overall_score}%</h1>
+                <p style="color: #666;">Highest single match found</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+        with c2:
+            st.markdown(f"""
+            <div style="padding: 1rem; background: #f0f2f6; border-radius: 10px; margin-bottom: 1rem; text-align: center;">
+                <h3 style="margin:0;">Average Similarity</h3>
+                <h1 style="color: #333; font-size: 3rem; margin:0;">{round(avg_score, 1)}%</h1>
+                <p style="color: #666;">Average across all {len(results)} results</p>
+            </div>
+            """, unsafe_allow_html=True)
 
         if not results:
             st.success("✅ No significant similarity found in arXiv papers.")
         else:
-            st.info(f"Found {len(results)} relevant papers with similarity > 10%:")
+            st.info(f"Found {len(results)} relevant papers (sorted by similarity):")
             for paper in results:
                 score = paper['similarity_score']
                 color_class = "similarity-low"
@@ -318,8 +324,8 @@ if st.session_state.paper_data:
                 <div class="plag-card {color_class}">
                     <h4>{paper['title']}</h4>
                     <p><b>Similarity: {score}%</b></p>
-                    <p style="font-size:0.9rem; color:#666;">{paper['summary'][:200]}...</p>
-                    <a href="{paper.get('pdf') or paper.get('link')}" target="_blank">📄 Read Paper →</a>
+                    <p style="font-size:0.9rem; color:#31333F;">{paper['summary'][:200]}...</p>
+                    <a href="{paper.get('pdf') or paper.get('link')}" target="_blank">Read Paper &rarr;</a>
                 </div>
                 """, unsafe_allow_html=True)
 

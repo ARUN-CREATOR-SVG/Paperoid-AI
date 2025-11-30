@@ -44,7 +44,7 @@ def render_latex_pdf(
         if "abstract" in clean_title and len(clean_title) < 15:
             continue
         # Skip if the section is References (since we print it manually at the end)
-        if "references" in clean_title or "bibliography" in clean_title:
+        if "reference" in clean_title or "bibliography" in clean_title:
              continue
 
         pdf.set_font("Arial", "B", 14)

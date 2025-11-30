@@ -82,14 +82,14 @@ def writer_agent_iterative(topic: str, context: list, page_length: int = 5) -> T
     sections = []
 
     # 🎯 Section Templates 
+    # 🎯 Section Templates 
     section_prompts = [
         ("Abstract", f"Write a 200-word academic abstract for '{topic}'. It MUST strictly summarize the findings from the following retrieved papers:\n{context_text}"),
         ("Introduction", f"Write an Introduction (400–500 words) for '{topic}'. Use the following context to explain the background and problem statement. Do NOT invent facts:\n{context_text}"),
         ("Literature Review", f"Write a Literature Review (400–500 words) synthesizing the following specific studies. Cite them by title:\n{context_text}"),
         ("Methodology", f"Write a Methodology (300–400 words) describing the research methods used in the retrieved papers. Synthesize their approaches (e.g., datasets, algorithms, experimental setups) based ONLY on the provided context:\n{context_text}"),
         ("Results and Discussion", f"Write a Results & Discussion section (500–600 words) synthesizing the key findings and results reported in the retrieved papers. Discuss the implications of these results. Do NOT invent new results:\n{context_text}"),
-        ("Conclusion", f"Write a Conclusion (250–300 words) summarizing the collective findings from the provided context:\n{context_text}"),
-        ("References", f"List the references exactly as they appear in the provided context:\n{context_text}")
+        ("Conclusion", f"Write a Conclusion (250–300 words) summarizing the collective findings from the provided context:\n{context_text}")
     ]
 
     # ⚙️ Loop through all sections
@@ -102,6 +102,13 @@ def writer_agent_iterative(topic: str, context: list, page_length: int = 5) -> T
             # 🧹 Clean text (avoid duplicate headers)
             content = content.replace("**", "")
             content = content.replace("Title:", "").replace("Abstract:", "").strip()
+            
+            # Remove section name if it appears at the start (case-insensitive)
+            if content.lower().startswith(name.lower()):
+                content = content[len(name):].strip()
+            # Also check for "Conclusion:" style
+            if content.lower().startswith(f"{name.lower()}:"):
+                 content = content[len(name)+1:].strip()
 
             sections.append(PaperSection(section_title=name, content=content))
         except Exception as e:

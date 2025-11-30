@@ -71,13 +71,13 @@ async def check_plagiarism(request: PlagiarismRequest):
         if not search_query:
             search_query = request.title # Fallback to raw title if keywords fail
 
-        search_results = search_arxiv(search_query, max_results=10)
+        search_results = search_arxiv(search_query, max_results=50)
         
         # Fallback: If no results found, try keywords from Abstract
         if not search_results:
              fallback_query = extract_keywords(request.abstract)
              if fallback_query:
-                search_results = search_arxiv(fallback_query, max_results=10)
+                search_results = search_arxiv(fallback_query, max_results=50)
         
         similar_papers = []
         
@@ -101,8 +101,6 @@ async def check_plagiarism(request: PlagiarismRequest):
                 
             # Sort by similarity score descending
             similar_papers.sort(key=lambda x: x["similarity_score"], reverse=True)
-            # Keep top 5
-            similar_papers = similar_papers[:5]
 
         # Calculate overall plagiarism score (Max of individual scores)
         overall_score = 0.0
