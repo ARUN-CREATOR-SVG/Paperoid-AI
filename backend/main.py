@@ -1,9 +1,12 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from schemas.paper_schemas import PaperoidState, ResearchRequest
-from workflow.research_graph import run_research_graph
+from workflow.research_graph import stream_research_graph
+from tools.arxiv_tool import search_arxiv, calculate_similarity
+from pydantic import BaseModel
 import os
+import json
 
 
 app = FastAPI(
@@ -34,51 +37,85 @@ def health_check():
 async def generate_paper(request: ResearchRequest):
     """
     Generate a research paper based on the provided request.
+    Returns a streaming response with progress updates.
+    """
+    state = PaperoidState(request=request)
+    
+    def event_generator():
+        for update in stream_research_graph(state):
+            yield json.dumps(update) + "\n"
+
+    return StreamingResponse(event_generator(), media_type="application/x-ndjson")
+
+
+class PlagiarismRequest(BaseModel):
+    title: str
+    abstract: str
+
+
+@app.post("/check-plagiarism/")
+async def check_plagiarism(request: PlagiarismRequest):
+    """
+    Check for potential plagiarism (similarity) against arXiv papers.
     """
     try:
-        state = PaperoidState(request=request)
+        # Helper to extract keywords (simple stopword removal)
+        def extract_keywords(text):
+            stopwords = {"a", "an", "the", "in", "on", "of", "for", "and", "or", "with", "to", "at", "by", "is", "are", "was", "were", "this", "that", "it", "from", "as", "be", "study", "paper", "research", "analysis", "survey", "review", "comprehensive", "proposed", "using", "based"}
+            words = text.lower().replace("-", " ").split()
+            keywords = [w for w in words if w.isalnum() and w not in stopwords and len(w) > 2]
+            return " ".join(keywords[:6]) # Return top 6 keywords
+
+        # 1. Search arXiv using keywords from Title
+        search_query = extract_keywords(request.title)
+        if not search_query:
+            search_query = request.title # Fallback to raw title if keywords fail
+
+        search_results = search_arxiv(search_query, max_results=10)
         
-        final_state = run_research_graph(state)
+        # Fallback: If no results found, try keywords from Abstract
+        if not search_results:
+             fallback_query = extract_keywords(request.abstract)
+             if fallback_query:
+                search_results = search_arxiv(fallback_query, max_results=10)
+        
+        similar_papers = []
+        
+        if search_results:
+            for paper in search_results:
+                # 2. Calculate similarity between abstracts
+                paper_summary = paper.get("summary", "")
+                # Use Jaccard similarity (Word Overlap)
+                similarity_score = calculate_similarity(request.abstract, paper_summary)
+                
+                # Convert to percentage
+                score_percent = round(similarity_score * 100, 2)
+                
+                similar_papers.append({
+                    "title": paper.get("title"),
+                    "link": paper.get("link"),
+                    "pdf": paper.get("pdf"),
+                    "similarity_score": score_percent,
+                    "summary": paper_summary[:200] + "..." # Truncate for display
+                })
+                
+            # Sort by similarity score descending
+            similar_papers.sort(key=lambda x: x["similarity_score"], reverse=True)
+            # Keep top 5
+            similar_papers = similar_papers[:5]
 
-        #  Extract data safely from either dict or PaperoidState
-        if isinstance(final_state, dict):
-            job_id = final_state.get("job_id")
-            title = final_state.get("title")
-            abstract = final_state.get("abstract")
-            status = final_state.get("status")
-            pdf_path = final_state.get("output_pdf")
-            generation_time = final_state.get("generation_time_s")
-            sections = final_state.get("sections", [])
-            references = final_state.get("references", [])
-        else:
-            job_id = getattr(final_state, "job_id", None)
-            title = getattr(final_state, "title", None) or getattr(final_state, "draft_title", None)
-            abstract = getattr(final_state, "abstract", None)
-            status = getattr(final_state, "status", None)
-            pdf_path = getattr(final_state, "output_pdf", None)
-            generation_time = getattr(final_state, "generation_time_s", None)
-            sections = getattr(final_state, "sections", [])
-            references = getattr(final_state, "references", [])
-
-        if status == "FAILED":
-            raise HTTPException(
-                status_code=500, 
-                detail=f"Paper generation failed: {getattr(final_state, 'errors', ['Unknown error'])}"
-            )
-
+        # Calculate overall plagiarism score (Max of individual scores)
+        overall_score = 0.0
+        if similar_papers:
+            overall_score = max(p["similarity_score"] for p in similar_papers)
+            
         return {
-            "job_id": job_id,
-            "title": title or "Untitled Research Paper",
-            "abstract": abstract or "No abstract available.",
-            "status": status or "COMPLETED",
-            "pdf_path": pdf_path,
-            "generation_time": round(generation_time, 2) if generation_time else 0,
-            "num_sections": len(sections),
-            "num_references": len(references)
+            "similar_papers": similar_papers,
+            "overall_score": overall_score
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error generating paper: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error checking plagiarism: {str(e)}")
 
 
 @app.get("/download-pdf/{job_id}")

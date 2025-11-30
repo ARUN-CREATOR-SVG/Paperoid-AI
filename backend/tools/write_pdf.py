@@ -39,6 +39,14 @@ def render_latex_pdf(
 
     # --- Sections ---
     for section in sections:
+        # Skip if the section is the Abstract (since we already printed it)
+        clean_title = section.section_title.strip().lower().replace("*", "")
+        if "abstract" in clean_title and len(clean_title) < 15:
+            continue
+        # Skip if the section is References (since we print it manually at the end)
+        if "references" in clean_title or "bibliography" in clean_title:
+             continue
+
         pdf.set_font("Arial", "B", 14)
         pdf.multi_cell(0, 10, clean_text(section.section_title))
         pdf.set_font("Arial", "", 12)

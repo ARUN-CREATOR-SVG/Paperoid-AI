@@ -1,8 +1,6 @@
 """
 Streamlit frontend for Paperoid Research Paper Generator
-
-Run with:
-    streamlit run frontend.py
+Enhanced with real-time progress updates and plagiarism detection.
 """
 
 import streamlit as st
@@ -10,220 +8,321 @@ import requests
 import time
 import base64
 import os
+import json
 
-
+# --- Configuration ---
 API_URL = "http://127.0.0.1:8000"
 GENERATE_ENDPOINT = f"{API_URL}/generate-paper/"
+CHECK_PLAGIARISM_ENDPOINT = f"{API_URL}/check-plagiarism/"
 
 st.set_page_config(
     page_title="Paperoid AI", 
     page_icon="📄", 
-    layout="centered",
+    layout="wide",
     initial_sidebar_state="collapsed"
 )
 
+# --- Custom CSS (Premium Design) ---
 st.markdown("""
 <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+
+    html, body, [class*="css"] {
+        font-family: 'Inter', sans-serif;
+    }
+
     .main-header {
         text-align: center;
-        padding: 1rem 0;
-        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        padding: 2rem 0;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        font-size: 3rem;
+        font-size: 3.5rem;
         font-weight: 800;
+        margin-bottom: 0.5rem;
     }
+    
     .subtitle {
         text-align: center;
-        color: #666;
+        color: #888;
         font-size: 1.2rem;
-        margin-bottom: 2rem;
+        margin-bottom: 3rem;
+        font-weight: 400;
     }
+
     .stButton>button {
         width: 100%;
         background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
         color: white;
         font-weight: 600;
         border: none;
-        padding: 0.75rem;
-        border-radius: 8px;
+        padding: 0.8rem;
+        border-radius: 12px;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 15px rgba(118, 75, 162, 0.3);
     }
-    .success-box {
+    
+    .stButton>button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(118, 75, 162, 0.4);
+    }
+
+    .card {
+        background: #ffffff;
+        padding: 1.5rem;
+        border-radius: 16px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+        margin-bottom: 1rem;
+        border: 1px solid #f0f0f0;
+    }
+
+    .metric-box {
+        text-align: center;
         padding: 1rem;
-        background-color: #d4edda;
-        border-left: 4px solid #28a745;
-        border-radius: 4px;
-        margin: 1rem 0;
-    }
-    .info-card {
         background: #f8f9fa;
-        padding: 1rem;
-        border-radius: 8px;
-        margin: 0.5rem 0;
+        border-radius: 12px;
+        border: 1px solid #e9ecef;
     }
+
+    .plag-card {
+        padding: 1rem;
+        border-radius: 10px;
+        background: #fff;
+        border-left: 5px solid #667eea;
+        margin-bottom: 1rem;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    }
+    
+    .similarity-high { border-left-color: #dc3545; }
+    .similarity-med { border-left-color: #ffc107; }
+    .similarity-low { border-left-color: #28a745; }
+
+    .progress-log {
+        background: #f8f9fa;
+        padding: 0.5rem 1rem;
+        border-radius: 8px;
+        border-left: 3px solid #667eea;
+        margin: 0.3rem 0;
+        font-family: 'Monaco', 'Courier New', monospace;
+        font-size: 0.9rem;
+    }
+
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<h1 class="main-header">📄 Paperoid AI</h1>', unsafe_allow_html=True)
-st.markdown('<p class="subtitle">Generate structured research papers using AI</p>', unsafe_allow_html=True)
+# --- Header ---
+st.markdown('<h1 class="main-header">Paperoid AI</h1>', unsafe_allow_html=True)
+st.markdown('<p class="subtitle">Generate structured research papers & check for overlaps</p>', unsafe_allow_html=True)
 
-try:
-    health_response = requests.get(f"{API_URL}/health", timeout=2)
-    if health_response.status_code == 200:
-        st.sidebar.success("✅ API Connected")
-    else:
-        st.sidebar.error("⚠️ API Not Responding")
-except:
-    st.sidebar.error("❌ API Offline")
-    st.error("⚠️ Backend API is not running. Please start the FastAPI server with: `uvicorn main:app --reload`")
+# --- Sidebar / Status ---
+with st.sidebar:
+    st.header("System Status")
+    try:
+        health_response = requests.get(f"{API_URL}/health", timeout=2)
+        if health_response.status_code == 200:
+            st.success("✅ API Connected")
+        else:
+            st.error("⚠️ API Not Responding")
+    except:
+        st.error("❌ API Offline")
+        st.warning("Ensure backend is running: `uvicorn main:app --reload`")
 
-st.markdown("### 📝 Paper Configuration")
-
-col1, col2 = st.columns(2)
+# --- Main Input Section ---
+col1, col2 = st.columns([2, 1])
 
 with col1:
-    topic = st.text_input(
-        "🧠 Research Topic", 
-        placeholder="e.g., Machine Learning in Healthcare",
-        help="Main topic for your research paper"
-    )
+    st.markdown("### 🧠 Research Configuration")
+    topic = st.text_input("Research Topic", placeholder="e.g., Generative Adversarial Networks in Medical Imaging")
+    keywords = st.text_input("Keywords (optional)", placeholder="GANs, MRI, CT scan, synthetic data")
 
 with col2:
-    length = st.slider(
-        "📏 Paper Length (pages)", 
-        min_value=3, 
-        max_value=15, 
-        value=5,
-        help="Approximate number of pages"
-    )
-
-keywords = st.text_area(
-    "🔍 Keywords (optional)", 
-    placeholder="machine learning, neural networks, healthcare",
-    help="Comma-separated keywords to guide the research"
-)
-
-domain = st.selectbox(
-    "🌐 Domain",
-    ["Computer Science", "AI/ML", "Healthcare", "Finance", "Physics", "Biology", "Other"],
-    help="Select the research domain"
-)
-
-num_refs = st.number_input(
-    "📚 Minimum References",
-    min_value=5,
-    max_value=20,
-    value=10,
-    help="Minimum number of references to include"
-)
-
-st.markdown("---")
-
+    st.markdown("### ⚙️ Settings")
+    domain = st.selectbox("Domain", ["Computer Science", "AI/ML", "Healthcare", "Finance", "Physics", "Other"])
+    length = st.slider("Pages", 3, 15, 5)
+    num_refs = st.number_input("Min References", 5, 30, 10)
 
 generate_btn = st.button("🚀 Generate Research Paper", type="primary")
 
+# --- Session State for Results ---
+if "paper_data" not in st.session_state:
+    st.session_state.paper_data = None
+if "plag_results" not in st.session_state:
+    st.session_state.plag_results = None
+
+# --- Generation Logic ---
 if generate_btn:
     if not topic.strip():
-        st.warning("⚠️ Please enter a research topic to generate the paper.")
+        st.warning("⚠️ Please enter a research topic.")
     else:
-        with st.spinner("🧩 Generating your research paper... This may take 1-3 minutes ⏳"):
+        # Reset previous results
+        st.session_state.paper_data = None
+        st.session_state.plag_results = None
+        
+        st.markdown("### 🔄 Generation Progress")
+        
+        # Use st.status for cleaner progress UI
+        with st.status("🚀 Starting research generation...", expanded=True) as status:
             try:
                 start_time = time.time()
-                
                 payload = {
                     "topic_or_prompt": topic.strip(),
                     "page_length": length,
                     "num_references": num_refs,
-                    "word_count": length * 500  
+                    "word_count": length * 500
                 }
-                
                 if keywords.strip():
-                    payload["title"] = f"{topic} - {keywords[:50]}"
+                    payload["title"] = f"{topic} - {keywords}"
 
-                response = requests.post(GENERATE_ENDPOINT, json=payload, timeout=300)
-                end_time = time.time()
-
-                if response.status_code == 200:
-                    data = response.json()
-                    
-                    st.success("✅ Paper generated successfully!")
-                    
-                    st.markdown("### 📊 Generation Summary")
-                    
-                    col1, col2, col3 = st.columns(3)
-                    
-                    with col1:
-                        st.metric("Job ID", data.get('job_id', 'N/A'))
-                    with col2:
-                        st.metric("Status", data.get('status', 'Unknown'))
-                    with col3:
-                        st.metric("Time (sec)", f"{data.get('generation_time', 0):.1f}")
-                    
-                    st.markdown("---")
-                    
-                    st.markdown("### 📘 Paper Details")
-                    st.markdown(f"**Title:** {data.get('title', 'Untitled')}")
-                    
-                    with st.expander("📄 Abstract", expanded=True):
-                        st.write(data.get('abstract', 'No abstract available.'))
-                    
-                    st.info(f"📑 **Sections:** {data.get('num_sections', 0)} | 📚 **References:** {data.get('num_references', 0)}")
-                    
-                    st.markdown("---")
-                    
-                    # ✅ PDF Display and Download
-                    st.markdown("### 📥 Download & Preview")
-                    
-                    pdf_path = data.get("pdf_path")
-
-                    if pdf_path and os.path.exists(pdf_path):
-                        with open(pdf_path, "rb") as f:
-                            pdf_bytes = f.read()
-
-                        # ✅ Download button (prominent)
-                        st.download_button(
-                            label="📥 Download PDF",
-                            data=pdf_bytes,
-                            file_name=f"research_paper_{data.get('job_id', 'output')}.pdf",
-                            mime="application/pdf",
-                            type="primary"
-                        )
-                        
-                        st.markdown("---")
-                        
-                        # ✅ PDF Preview
-                        with st.expander("👁️ Preview PDF", expanded=False):
-                            base64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
-                            pdf_display = f"""
-                            <iframe src="data:application/pdf;base64,{base64_pdf}"
-                                    width="100%" height="800" type="application/pdf"
-                                    style="border: 1px solid #ddd; border-radius: 8px;">
-                            </iframe>
-                            """
-                            st.markdown(pdf_display, unsafe_allow_html=True)
-                    else:
-                        st.error(f"⚠️ PDF not found at: {pdf_path}")
-                        st.info("The PDF may have been generated but the path is incorrect. Check the `output/` directory.")
+                # Stream the response
+                response = requests.post(
+                    GENERATE_ENDPOINT, 
+                    json=payload, 
+                    timeout=300, 
+                    stream=True
+                )
                 
-                elif response.status_code == 500:
-                    st.error(f"❌ Server Error: {response.json().get('detail', 'Unknown error')}")
+                if response.status_code == 200:
+                    for line in response.iter_lines():
+                        if line:
+                            try:
+                                update = json.loads(line.decode('utf-8'))
+                                
+                                if update["type"] == "log":
+                                    status.write(f"🔄 {update['message']}")
+                                    
+                                elif update["type"] == "result":
+                                    st.session_state.paper_data = update["data"]
+                                    elapsed = round(time.time() - start_time, 2)
+                                    status.update(label=f"✅ Generation Complete in {elapsed}s!", state="complete", expanded=False)
+                                    
+                                elif update["type"] == "error":
+                                    status.update(label="❌ Generation Failed", state="error")
+                                    st.error(update["message"])
+                                    
+                            except json.JSONDecodeError:
+                                continue
+                
                 else:
-                    st.error(f"❌ Error: {response.status_code} - {response.text}")
-
+                    status.update(label="❌ API Error", state="error")
+                    st.error(f"❌ API Error: {response.status_code} - {response.text}")
+                    
             except requests.exceptions.Timeout:
+                status.update(label="⏱️ Timeout", state="error")
                 st.error("⏱️ Request timed out. The paper generation is taking longer than expected.")
-            except requests.exceptions.ConnectionError:
-                st.error("❌ Connection Error: Cannot reach the API. Make sure the backend is running.")
             except Exception as e:
-                st.error(f"⚠️ Unexpected Error: {str(e)}")
-                st.info("Check the console logs for more details.")
+                status.update(label="⚠️ Error", state="error")
+                st.error(f"⚠️ Error: {str(e)}")
 
-# ✅ Footer
+# --- Display Generated Paper ---
+if st.session_state.paper_data:
+    data = st.session_state.paper_data
+    st.markdown("---")
+    st.markdown("## 📊 Generated Paper")
+    
+    # Tabs for different views
+    tab1, tab2 = st.tabs(["📄 Paper Details", "📥 Download & Preview"])
+    
+    with tab1:
+        st.markdown(f"### {data.get('title', 'Untitled')}")
+        
+        c1, c2, c3 = st.columns(3)
+        c1.metric("📑 Sections", data.get('num_sections', 0))
+        c2.metric("📚 References", data.get('num_references', 0))
+        c3.metric("⏱️ Time", f"{data.get('generation_time', 0)}s")
+        
+        st.markdown("### Abstract")
+        st.info(data.get('abstract', 'No abstract available.'))
+        
+    with tab2:
+        pdf_path = data.get("pdf_path")
+        if pdf_path and os.path.exists(pdf_path):
+            with open(pdf_path, "rb") as f:
+                pdf_bytes = f.read()
+            
+            col_d1, col_d2 = st.columns([1, 2])
+            with col_d1:
+                st.download_button(
+                    label="📥 Download PDF",
+                    data=pdf_bytes,
+                    file_name=f"research_paper_{data.get('job_id')}.pdf",
+                    mime="application/pdf",
+                    type="primary"
+                )
+                st.caption(f"Job ID: `{data.get('job_id')}`")
+            
+            with col_d2:
+                base64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
+                pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" style="border-radius:12px; border: 1px solid #ddd;"></iframe>'
+                st.markdown(pdf_display, unsafe_allow_html=True)
+        else:
+            st.warning(f"⚠️ PDF file not found. Path: {pdf_path}")
+
+    # --- Plagiarism Check Section (Outside Tabs) ---
+    st.markdown("---")
+    st.markdown("### 🕵️ Similarity Check (arXiv)")
+    st.caption("Check for papers with similar abstracts on arXiv")
+    
+    if st.button("🔍 Run Similarity Check", key="plag_check_btn"):
+        with st.spinner("Searching arXiv..."):
+            try:
+                search_abstract = data.get('abstract', '')
+                if not search_abstract or search_abstract == "No abstract available.":
+                    search_abstract = topic
+                    
+                plag_payload = {
+                    "title": data.get('title', topic),
+                    "abstract": search_abstract
+                }
+                plag_resp = requests.post(CHECK_PLAGIARISM_ENDPOINT, json=plag_payload, timeout=30)
+                
+                if plag_resp.status_code == 200:
+                    resp_data = plag_resp.json()
+                    st.session_state.plag_results = resp_data.get("similar_papers", [])
+                    st.session_state.plag_score = resp_data.get("overall_score", 0.0)
+                else:
+                    st.error(f"❌ Check failed: {plag_resp.text}")
+            except Exception as e:
+                st.error(f"⚠️ Error: {str(e)}")
+
+    # Display plagiarism results
+    if st.session_state.plag_results is not None:
+        results = st.session_state.plag_results
+        overall_score = st.session_state.get("plag_score", 0.0)
+        
+        # Display Overall Score
+        score_color = "green"
+        if overall_score > 50: score_color = "red"
+        elif overall_score > 20: score_color = "orange"
+        
+        st.markdown(f"""
+        <div style="padding: 1rem; background: #f0f2f6; border-radius: 10px; margin-bottom: 1rem; text-align: center;">
+            <h3 style="margin:0;">Overall Similarity Score</h3>
+            <h1 style="color: {score_color}; font-size: 3rem; margin:0;">{overall_score}%</h1>
+            <p style="color: #666;">Highest similarity found among top matches</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        if not results:
+            st.success("✅ No significant similarity found in arXiv papers.")
+        else:
+            st.info(f"Found {len(results)} relevant papers with similarity > 10%:")
+            for paper in results:
+                score = paper['similarity_score']
+                color_class = "similarity-low"
+                if score > 50: 
+                    color_class = "similarity-high"
+                elif score > 20: 
+                    color_class = "similarity-med"
+                
+                st.markdown(f"""
+                <div class="plag-card {color_class}">
+                    <h4>{paper['title']}</h4>
+                    <p><b>Similarity: {score}%</b></p>
+                    <p style="font-size:0.9rem; color:#666;">{paper['summary'][:200]}...</p>
+                    <a href="{paper.get('pdf') or paper.get('link')}" target="_blank">📄 Read Paper →</a>
+                </div>
+                """, unsafe_allow_html=True)
+
+# --- Footer ---
 st.markdown("---")
-st.markdown("""
-<div style="text-align: center; color: #666; padding: 2rem 0;">
-    <p>Built with ❤️ using FastAPI, LangGraph, and Streamlit</p>
-    <p style="font-size: 0.9rem;">Powered by Meta LLaMA 3</p>
-</div>
-""", unsafe_allow_html=True)
-
+st.markdown("<div style='text-align: center; color: #aaa; font-size: 0.9rem;'>Paperoid AI v2.0 • Powered by LangGraph & LLaMA</div>", unsafe_allow_html=True)

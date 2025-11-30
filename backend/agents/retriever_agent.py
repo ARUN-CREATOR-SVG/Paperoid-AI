@@ -1,70 +1,52 @@
-from langchain_huggingface import ChatHuggingFace, HuggingFaceEndpoint
+from tools.arxiv_tool import search_arxiv
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
-model_endpoint = HuggingFaceEndpoint(
-    repo_id="meta-llama/Meta-Llama-3-8B-Instruct",
-    task="text-generation",
-    temperature=0.7,          
-    max_new_tokens=512,     
-    top_p=0.9,               
-    return_full_text=False, 
-    huggingfacehub_api_token=os.getenv("HUGGINGFACEHUB_API_TOKEN"),
-)
 
-llm = ChatHuggingFace(llm=model_endpoint)
-
-
-
-def retriever_agent(topic: str):
+def retriever_agent(topic: str, limit: int = 10):
     """
-    Retrieves relevant research papers and converts them into Citation-compatible dicts.
+    Retrieves relevant research papers from arXiv and converts them into Citation-compatible dicts.
     """
-    prompt = f"""
-You are a helpful research assistant. 
-List exactly 5 recent research papers related to:
-'{topic}'
-
-Format each line as:
-Title: <paper title> - Summary: <2 lines>
-"""
-
+    print(f"🔍 Searching arXiv for: {topic} (Limit: {limit})")
     try:
-        response = llm.invoke(prompt)
-        text = response.content
-
+        # Fetch real papers from arXiv
+        results = search_arxiv(topic, max_results=limit)
+        print(f"✅ Found {len(results)} papers from arXiv API.")
+        
         papers = []
-        for i, line in enumerate(text.split("\n")):
-            if line.strip():
-                if " - " in line:
-                    title, summary = line.split(" - ", 1)
-                else:
-                    title, summary = line, ""
-                
-                papers.append({
-                    "title": title.replace('Title:', '').strip(),
-                    "summary": summary.replace('Summary:', '').strip(),
-                    "key": f"[Ref-{i+1}]",
-                    "source_id": f"src-{i+1}"
-                })
-
+        for i, p in enumerate(results):
+            # Clean up summary to be single line for better context injection
+            clean_summary = p["summary"].replace("\n", " ").strip()
+            
+            papers.append({
+                "title": p["title"],
+                "summary": clean_summary,
+                "key": f"[Ref-{i+1}]",
+                "source_id": p["link"],
+                "link": p["link"],
+                "pdf": p["pdf"]
+            })
+            
         if not papers:
-            papers = [{
-                "title": "No papers found",
-                "summary": "Model returned empty response.",
-                "key": "[Ref-1]",
-                "source_id": "src-1"
+             print(f"⚠️ No relevant papers found for '{topic}' after filtering.")
+             return [{
+                "title": "No relevant research papers found",
+                "summary": f"No papers matching '{topic}' were found on arXiv. The topic might be too specific or fictional.",
+                "key": "[Ref-None]",
+                "source_id": "N/A",
+                "link": "N/A",
+                "pdf": "N/A"
             }]
-
+            
         return papers
 
     except Exception as e:
         print(f"❌ Retriever error: {e}")
         return [{
             "title": "Retrieval failed",
-            "summary": f"Error: {e}",
+            "summary": f"Error: {str(e)}",
             "key": "[Ref-Error]",
             "source_id": "src-error"
         }]
